@@ -724,6 +724,10 @@ def optimize_image_for_tryon(image):
     try:
         print("开始优化图片格式...")
         
+        # 确保是有效的图像对象
+        if image is None:
+            raise ValueError("输入图像为None")
+        
         # 1. 转换为RGB模式
         if image.mode == 'RGBA':
             # 创建白色背景
@@ -737,33 +741,59 @@ def optimize_image_for_tryon(image):
         
         # 2. 调整图片尺寸 - 确保符合API要求（150-4096像素）
         width, height = image.size
+        print(f"原始图片尺寸: {width}x{height}")
         
-        # 如果图片太小，放大到合适尺寸
+        # 计算合适的尺寸
+        target_size = 1024  # 推荐使用1024像素
+        
         if min(width, height) < 150:
-            scale_factor = 150 / min(width, height)
-            new_width = int(width * scale_factor)
-            new_height = int(height * scale_factor)
+            # 如果图片太小，放大到目标尺寸
+            if width < height:
+                new_width = target_size
+                new_height = int(height * target_size / width)
+            else:
+                new_height = target_size
+                new_width = int(width * target_size / height)
             image = image.resize((new_width, new_height), Image.LANCZOS)
             print(f"图片尺寸从 {width}x{height} 放大到 {new_width}x{new_height}")
-        
-        # 如果图片太大，缩小到合适尺寸
-        elif max(width, height) > 2048:  # 使用2048而不是4096，确保处理效率
-            scale_factor = 2048 / max(width, height)
-            new_width = int(width * scale_factor)
-            new_height = int(height * scale_factor)
+        elif max(width, height) > 2048:
+            # 如果图片太大，缩小到合适尺寸
+            if width > height:
+                new_width = 2048
+                new_height = int(height * 2048 / width)
+            else:
+                new_height = 2048
+                new_width = int(width * 2048 / height)
             image = image.resize((new_width, new_height), Image.LANCZOS)
             print(f"图片尺寸从 {width}x{height} 缩小到 {new_width}x{new_height}")
+        else:
+            # 图片尺寸合适，但仍然统一调整到目标尺寸以确保一致性
+            if width != target_size or height != target_size:
+                # 保持长宽比，最长边调整到目标尺寸
+                if width > height:
+                    new_width = target_size
+                    new_height = int(height * target_size / width)
+                else:
+                    new_height = target_size
+                    new_width = int(width * target_size / height)
+                image = image.resize((new_width, new_height), Image.LANCZOS)
+                print(f"图片尺寸从 {width}x{height} 调整到 {new_width}x{new_height}")
         
         # 3. 增强图片质量
         from PIL import ImageEnhance
         
         # 轻微增强对比度
         enhancer = ImageEnhance.Contrast(image)
-        image = enhancer.enhance(1.1)
+        image = enhancer.enhance(1.05)  # 降低增强幅度
         
         # 轻微增强清晰度
         enhancer = ImageEnhance.Sharpness(image)
-        image = enhancer.enhance(1.05)
+        image = enhancer.enhance(1.02)  # 降低增强幅度
+        
+        # 4. 验证最终图片
+        final_width, final_height = image.size
+        if min(final_width, final_height) < 150 or max(final_width, final_height) > 4096:
+            raise ValueError(f"图片尺寸不符合要求: {final_width}x{final_height}")
         
         print(f"图片优化完成，最终尺寸: {image.size}")
         
@@ -771,8 +801,27 @@ def optimize_image_for_tryon(image):
         
     except Exception as e:
         print(f"图片优化失败: {e}")
-        # 如果优化失败，返回原图
-        return image
+        # 如果优化失败，尝试简单的尺寸调整
+        try:
+            if image is not None:
+                # 强制转换为RGB模式
+                if image.mode != 'RGB':
+                    if image.mode == 'RGBA':
+                        background = Image.new('RGB', image.size, (255, 255, 255))
+                        background.paste(image, mask=image.split()[-1])
+                        image = background
+                    else:
+                        image = image.convert('RGB')
+                
+                # 强制调整到标准尺寸
+                image = image.resize((1024, 1024), Image.LANCZOS)
+                print(f"应急处理：图片已调整为1024x1024")
+                return image
+        except Exception as e2:
+            print(f"应急处理也失败: {e2}")
+        
+        # 如果所有处理都失败，返回None
+        return None
 
 def upload_to_oss(image_path):
     """尝试将图片上传到阿里云 OSS，并返回公网 URL。
@@ -820,10 +869,20 @@ def upload_to_oss(image_path):
 def upload_image_to_get_public_url(image_path):
     """
     上传图像到获得公网URL
-    使用多个可靠的免费图片托管服务
+    使用多个可靠的免费图片托管服务，优先使用阿里云OSS
     """
     
     print(f"开始上传图片: {image_path}")
+    
+    # 首先尝试阿里云OSS（如果配置了环境变量）
+    oss_url = upload_to_oss(image_path)
+    if oss_url:
+        # 验证URL是否可访问
+        if verify_image_url(oss_url):
+            print(f"✅ OSS上传成功并验证可访问: {oss_url}")
+            return oss_url
+        else:
+            print(f"❌ OSS上传成功但URL不可访问: {oss_url}")
     
     # 尝试多个可靠的图片托管服务
     upload_services = [
@@ -832,6 +891,11 @@ def upload_image_to_get_public_url(image_path):
             "url": "https://api.imgbb.com/1/upload",
             "method": "imgbb",
             "key": "2d1f44e048f7a69c02947e9ad0797e48"  # 公共API密钥
+        },
+        {
+            "name": "postimages",
+            "url": "https://postimages.org/json/rr",
+            "method": "postimages"
         },
         {
             "name": "catbox",
@@ -860,8 +924,34 @@ def upload_image_to_get_public_url(image_path):
                         result = response.json()
                         if result.get('success'):
                             url = result['data']['url']
-                            print(f"✅ {service['name']} 上传成功: {url}")
-                            return url
+                            if verify_image_url(url):
+                                print(f"✅ {service['name']} 上传成功: {url}")
+                                return url
+                            else:
+                                print(f"❌ {service['name']} 上传成功但URL验证失败: {url}")
+                        else:
+                            print(f"❌ {service['name']} 响应失败: {result}")
+                            
+            elif service['method'] == 'postimages':
+                with open(image_path, 'rb') as file:
+                    files = {'upload': file}
+                    data = {
+                        'token': '',  # 可选，注册用户可填写
+                        'upload_session': str(uuid.uuid4()),
+                        'numfiles': '1'
+                    }
+                    
+                    response = requests.post(service['url'], files=files, data=data, timeout=30)
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        if result.get('status') == 'OK':
+                            url = result.get('url')
+                            if url and verify_image_url(url):
+                                print(f"✅ {service['name']} 上传成功: {url}")
+                                return url
+                            else:
+                                print(f"❌ {service['name']} 上传成功但URL验证失败: {url}")
                         else:
                             print(f"❌ {service['name']} 响应失败: {result}")
                             
@@ -874,11 +964,11 @@ def upload_image_to_get_public_url(image_path):
                     
                     if response.status_code == 200:
                         url = response.text.strip()
-                        if url.startswith('http'):
+                        if url.startswith('http') and verify_image_url(url):
                             print(f"✅ {service['name']} 上传成功: {url}")
                             return url
                         else:
-                            print(f"❌ {service['name']} 响应异常: {url}")
+                            print(f"❌ {service['name']} 响应异常或URL验证失败: {url}")
                             
             elif service['method'] == 'tmpfiles':
                 with open(image_path, 'rb') as file:
@@ -891,8 +981,11 @@ def upload_image_to_get_public_url(image_path):
                         if result.get('status') == 'success':
                             # tmpfiles.org 返回的URL需要转换
                             url = result['data']['url'].replace('tmpfiles.org/', 'tmpfiles.org/dl/')
-                            print(f"✅ {service['name']} 上传成功: {url}")
-                            return url
+                            if verify_image_url(url):
+                                print(f"✅ {service['name']} 上传成功: {url}")
+                                return url
+                            else:
+                                print(f"❌ {service['name']} 上传成功但URL验证失败: {url}")
                         else:
                             print(f"❌ {service['name']} 响应失败: {result}")
                             
@@ -901,11 +994,61 @@ def upload_image_to_get_public_url(image_path):
             continue
     
     # 所有上传服务都失败时的处理
-    print("⚠️ all_upload_services_failed")
-    st.warning("all_upload_services_failed")
+    print("⚠️ 所有图片上传服务都失败")
+    st.warning("图片上传失败，将使用示例图片进行演示。请检查网络连接后重试。")
     
     # 返回示例图片URL作为备选方案
     return "https://help-static-aliyun-doc.aliyuncs.com/file-manage-files/zh-CN/20250626/epousa/short_sleeve.jpeg"
+
+def verify_image_url(url, timeout=10):
+    """
+    验证图片URL是否可访问
+    
+    Args:
+        url: 图片URL
+        timeout: 超时时间（秒）
+    
+    Returns:
+        bool: URL是否可访问
+    """
+    try:
+        print(f"验证图片URL: {url}")
+        response = requests.head(url, timeout=timeout, allow_redirects=True)
+        
+        # 检查HTTP状态码
+        if response.status_code != 200:
+            print(f"❌ URL状态码异常: {response.status_code}")
+            return False
+        
+        # 检查Content-Type
+        content_type = response.headers.get('Content-Type', '').lower()
+        if not any(img_type in content_type for img_type in ['image/', 'application/octet-stream']):
+            print(f"❌ Content-Type不是图片: {content_type}")
+            return False
+        
+        # 检查Content-Length（如果有的话）
+        content_length = response.headers.get('Content-Length')
+        if content_length:
+            try:
+                size = int(content_length)
+                if size < 1024:  # 小于1KB可能不是有效图片
+                    print(f"❌ 图片太小: {size} bytes")
+                    return False
+                if size > 10 * 1024 * 1024:  # 大于10MB
+                    print(f"❌ 图片太大: {size} bytes")
+                    return False
+            except ValueError:
+                pass
+        
+        print(f"✅ URL验证通过: {url}")
+        return True
+        
+    except requests.exceptions.RequestException as e:
+        print(f"❌ URL验证失败: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ URL验证异常: {e}")
+        return False
 
 def create_tryon_task(person_image_url, garment_image_url):
     """
@@ -1032,78 +1175,125 @@ def generate_model_tryon(tshirt_image, model_image_url=None, progress_callback=N
         if progress_callback:
             progress_callback(progress, message)
         print(f"进度 {progress}%: {message}")
+    
     try:
         # 如果没有提供模特图片，使用默认模特
         if model_image_url is None:
             # 使用阿里云文档中提供的示例模特图
             model_image_url = "https://help-static-aliyun-doc.aliyuncs.com/file-manage-files/zh-CN/20250626/ubznva/model_person.png"
         
-        update_progress(10, "generate_model_tryon: start")
-        print(f"generate_model_tryon: {model_image_url}")
+        update_progress(10, "开始生成模特试穿效果...")
+        print(f"开始生成模特试穿效果，使用模特图片: {model_image_url}")
+        
+        # 验证输入图片
+        if tshirt_image is None:
+            return None, {"error": "T恤设计图片为空"}
         
         # 1. 保存T恤图片到临时文件
-        update_progress(15, "generate_model_tryon: save_image_temporarily")
+        update_progress(15, "保存T恤设计图片...")
         temp_path = save_image_temporarily(tshirt_image, "tshirt_design")
         if not temp_path:
             return None, {"error": "Failed to save temporary image"}
         
-        print(f"generate_model_tryon: {temp_path}")
+        print(f"T恤图片已保存到临时文件: {temp_path}")
         
         # 2. 优化T恤图片并上传获得公网URL
-        update_progress(20, "generate_model_tryon: optimize_image_for_tryon")
+        update_progress(20, "优化图片格式...")
         # 先将图片转换为适合试衣的格式
         optimized_image = optimize_image_for_tryon(tshirt_image)
+        
+        if optimized_image is None:
+            print("图片优化失败，使用原图")
+            optimized_image = tshirt_image
         
         # 保存优化后的图片
         optimized_path = save_image_temporarily(optimized_image, "optimized_tshirt")
         if not optimized_path:
-            print("save_image_temporarily: Failed to save optimized image")
-            return None, {"error": "Failed to save optimized image"}
+            print("保存优化图片失败，使用原图路径")
+            optimized_path = temp_path
         
-        print(f"generate_model_tryon: {optimized_path}")
+        print(f"优化后的T恤图片已保存: {optimized_path}")
         
-        update_progress(30, "upload_image_to_get_public_url")
-        # 上传优化后的图片
-        garment_url = upload_image_to_get_public_url(optimized_path)
-        if not garment_url or garment_url == "https://help-static-aliyun-doc.aliyuncs.com/file-manage-files/zh-CN/20250626/epousa/short_sleeve.jpeg":
-            # 如果上传失败，尝试上传原始图片
-            print(" Failed to upload optimized image, trying to upload original image")
-            garment_url = upload_image_to_get_public_url(temp_path)
+        update_progress(30, "上传T恤设计到云端...")
         
-        print(f"generate_model_tryon: {garment_url}")
+        # 多次尝试上传图片
+        garment_url = None
+        upload_attempts = 2
+        
+        for attempt in range(upload_attempts):
+            try:
+                print(f"第 {attempt + 1} 次尝试上传图片...")
+                garment_url = upload_image_to_get_public_url(optimized_path)
+                
+                # 如果上传成功且不是示例图片，跳出循环
+                if garment_url and garment_url != "https://help-static-aliyun-doc.aliyuncs.com/file-manage-files/zh-CN/20250626/epousa/short_sleeve.jpeg":
+                    break
+                    
+                # 如果优化图片上传失败，尝试原图
+                if attempt == 0 and optimized_path != temp_path:
+                    print("优化图片上传失败，尝试上传原图")
+                    garment_url = upload_image_to_get_public_url(temp_path)
+                    if garment_url and garment_url != "https://help-static-aliyun-doc.aliyuncs.com/file-manage-files/zh-CN/20250626/epousa/short_sleeve.jpeg":
+                        break
+                        
+            except Exception as e:
+                print(f"第 {attempt + 1} 次上传失败: {e}")
+                if attempt == upload_attempts - 1:
+                    # 最后一次尝试失败，使用示例图片
+                    garment_url = "https://help-static-aliyun-doc.aliyuncs.com/file-manage-files/zh-CN/20250626/epousa/short_sleeve.jpeg"
+        
+        print(f"最终使用的服装图片URL: {garment_url}")
         
         # 显示上传状态
         if garment_url != "https://help-static-aliyun-doc.aliyuncs.com/file-manage-files/zh-CN/20250626/epousa/short_sleeve.jpeg":
-            update_progress(40, "✅ your t-shirt design has been successfully uploaded, using your actual design!")
+            update_progress(40, "✅ 您的T恤设计已成功上传，正在使用您的实际设计！")
         else:
-            update_progress(40, "⚠️ image upload failed, using example image for demonstration")
+            update_progress(40, "⚠️ 图片上传失败，使用示例图片进行演示")
         
         # 清理优化图片的临时文件
         try:
-            if optimized_path != temp_path:
+            if optimized_path != temp_path and os.path.exists(optimized_path):
                 os.remove(optimized_path)
-        except:
-            pass
+        except Exception as e:
+            print(f"清理临时文件失败: {e}")
         
         # 3. 创建试衣任务（只试穿上装）
-        update_progress(45, "create_tryon_task")
-        print("create_tryon_task")
-        task_response = create_tryon_task(model_image_url, garment_url)
+        update_progress(45, "创建AI试衣任务...")
+        print("创建试衣任务...")
         
-        if "error" in task_response:
-            print(f"create_tryon_task: {task_response}")
-            return None, task_response
+        # 多次尝试创建任务
+        task_response = None
+        task_attempts = 3
+        
+        for attempt in range(task_attempts):
+            try:
+                print(f"第 {attempt + 1} 次尝试创建试衣任务...")
+                task_response = create_tryon_task(model_image_url, garment_url)
+                
+                if "error" not in task_response:
+                    break
+                else:
+                    print(f"第 {attempt + 1} 次创建任务失败: {task_response}")
+                    
+            except Exception as e:
+                print(f"第 {attempt + 1} 次创建任务异常: {e}")
+                task_response = {"error": f"创建任务异常: {str(e)}"}
+        
+        if task_response is None or "error" in task_response:
+            error_msg = task_response.get("error", "未知错误") if task_response else "创建任务失败"
+            print(f"创建试衣任务最终失败: {error_msg}")
+            return None, {"error": f"创建试衣任务失败: {error_msg}"}
         
         task_id = task_response.get("output", {}).get("task_id")
         if not task_id:
             print(f"无法获取任务ID: {task_response}")
             return None, {"error": "Failed to get task ID from response"}
         
-        print(f"create_tryon_task: task created successfully, task ID: {task_id}")
-        update_progress(50, "AI is processing the try-on effect...")
+        print(f"任务创建成功，任务ID: {task_id}")
+        update_progress(50, "AI正在处理试衣效果...")
         
         # 4. 轮询任务状态
-        print("poll_tryon_task")
+        print("开始轮询任务状态...")
         
         # 创建轮询进度回调
         def poll_progress_callback(attempt, max_attempts, status):
@@ -1117,43 +1307,58 @@ def generate_model_tryon(tshirt_image, model_image_url=None, progress_callback=N
             return None, result
         
         # 5. 下载试穿效果图
-        update_progress(90, "download_tryon_image")
+        update_progress(90, "下载试穿效果图...")
         image_url = result.get("output", {}).get("image_url")
         if not image_url:
-            print(f"generate_model_tryon: {result}")
+            print(f"结果中没有图片URL: {result}")
             return None, {"error": "No image URL in result"}
         
-        print(f"generate_model_tryon: {image_url}")
+        print(f"开始下载试穿效果图: {image_url}")
         
-        # 下载图片
-        img_response = requests.get(image_url, timeout=30)
-        if img_response.status_code == 200:
-            try_on_image = Image.open(BytesIO(img_response.content)).convert("RGBA")
-            
-            print(f"generate_model_tryon: {try_on_image.size}")
-            update_progress(100, "✅ try-on effect generated successfully")
-            
-            # 清理临时文件
+        # 多次尝试下载图片
+        try_on_image = None
+        download_attempts = 3
+        
+        for attempt in range(download_attempts):
             try:
+                print(f"第 {attempt + 1} 次尝试下载试穿效果图...")
+                img_response = requests.get(image_url, timeout=30)
+                
+                if img_response.status_code == 200:
+                    try_on_image = Image.open(BytesIO(img_response.content)).convert("RGBA")
+                    print(f"试穿效果图下载成功，尺寸: {try_on_image.size}")
+                    break
+                else:
+                    print(f"第 {attempt + 1} 次下载失败，状态码: {img_response.status_code}")
+                    
+            except Exception as e:
+                print(f"第 {attempt + 1} 次下载异常: {e}")
+        
+        if try_on_image is None:
+            return None, {"error": "Failed to download result image after multiple attempts"}
+        
+        update_progress(100, "✅ 试穿效果生成完成！")
+        
+        # 清理临时文件
+        try:
+            if os.path.exists(temp_path):
                 os.remove(temp_path)
                 print(f"临时文件已清理: {temp_path}")
-            except:
-                pass
-            
-            return try_on_image, {
-                "success": True,
-                "task_id": task_id,
-                "image_url": image_url,
-                "message": "try-on effect generated successfully"
-            }
-        else:
-            print(f"下载图片失败，状态码: {img_response.status_code}")
-            return None, {"error": f"Failed to download result image: {img_response.status_code}"}
+        except Exception as e:
+            print(f"清理临时文件失败: {e}")
+        
+        return try_on_image, {
+            "success": True,
+            "task_id": task_id,
+            "image_url": image_url,
+            "message": "试穿效果生成成功"
+        }
             
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
         print(f"生成试穿效果时发生错误: {error_details}")
+        update_progress(0, f"❌ 生成失败: {str(e)}")
         return None, {"error": f"Error in model tryon: {str(e)}\n{error_details}"}
 
 # ===== 模特试穿功能结束 =====
