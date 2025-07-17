@@ -282,23 +282,23 @@ def generate_vector_image(prompt, background_color=None):
                         print(f"背景透明化处理完成")
                         return img_processed
                     else:
-                        st.error(f"Failed to download image, status code: {image_resp.status_code}")
+                        st.error(f"下载图像失败, 状态码: {image_resp.status_code}")
             else:
                 print('DashScope调用失败, status_code: %s, code: %s, message: %s' %
                       (rsp.status_code, rsp.code, rsp.message))
-                st.error(f"DashScope API call failed: {rsp.message}")
+                st.error(f"DashScope API调用失败: {rsp.message}")
                 
         except Exception as e:
-            st.error(f"DashScope API call error: {e}")
+            st.error(f"DashScope API调用错误: {e}")
             print(f"DashScope错误: {e}")
     
     # 如果DashScope不可用，直接返回None
     if not DASHSCOPE_AVAILABLE:
-        st.error("DashScope API is not available, unable to generate logo. Please ensure dashscope library is properly installed.")
+        st.error("DashScope API不可用，无法生成logo。请确保已正确安装dashscope库。")
         return None
     
     # DashScope失败时也直接返回None，不使用备选方案
-    st.error("DashScope API call failed, unable to generate logo. Please check network connection or API key.")
+    st.error("DashScope API调用失败，无法生成logo。请检查网络连接或API密钥。")
     return None
 
 def change_shirt_color(image, color_hex, apply_texture=False, fabric_type=None):
@@ -1074,9 +1074,9 @@ def generate_model_tryon(tshirt_image, model_image_url=None, progress_callback=N
         
         # 显示上传状态
         if garment_url != "https://help-static-aliyun-doc.aliyuncs.com/file-manage-files/zh-CN/20250626/epousa/short_sleeve.jpeg":
-            update_progress(40, "✅ Your t-shirt design has been successfully uploaded, using your actual design!")
+            update_progress(40, "✅ your t-shirt design has been successfully uploaded, using your actual design!")
         else:
-            update_progress(40, "⚠️ Image upload failed, using example image for demonstration")
+            update_progress(40, "⚠️ image upload failed, using example image for demonstration")
         
         # 清理优化图片的临时文件
         try:
@@ -1108,7 +1108,7 @@ def generate_model_tryon(tshirt_image, model_image_url=None, progress_callback=N
         # 创建轮询进度回调
         def poll_progress_callback(attempt, max_attempts, status):
             progress = 50 + int(40 * attempt / max_attempts)  # 50-90%的进度用于轮询
-            update_progress(progress, f"Generating... (Status: {status})")
+            update_progress(progress, f"生成中...（状态: {status}）")
         
         result = poll_tryon_task(task_id, progress_callback=poll_progress_callback)
         
@@ -1130,16 +1130,8 @@ def generate_model_tryon(tshirt_image, model_image_url=None, progress_callback=N
         if img_response.status_code == 200:
             try_on_image = Image.open(BytesIO(img_response.content)).convert("RGBA")
             
-            print(f"试穿效果图下载成功，原始尺寸: {try_on_image.size}")
-            
-            # 保存原始试穿结果以便用户调整裁剪比例
-            import streamlit as st
-            st.session_state.original_tryon_result = try_on_image.copy()
-            
-            # 裁剪图片只保留上半部分，固定使用0.6比例
-            cropped_try_on_image = crop_upper_body(try_on_image, crop_ratio=0.6)
-            
-            update_progress(100, "✅ Try-on effect generated successfully!")
+            print(f"generate_model_tryon: {try_on_image.size}")
+            update_progress(100, "✅ try-on effect generated successfully")
             
             # 清理临时文件
             try:
@@ -1148,11 +1140,11 @@ def generate_model_tryon(tshirt_image, model_image_url=None, progress_callback=N
             except:
                 pass
             
-            return cropped_try_on_image, {
+            return try_on_image, {
                 "success": True,
                 "task_id": task_id,
                 "image_url": image_url,
-                "message": "Try-on effect generated successfully"
+                "message": "try-on effect generated successfully"
             }
         else:
             print(f"下载图片失败，状态码: {img_response.status_code}")
@@ -1163,48 +1155,6 @@ def generate_model_tryon(tshirt_image, model_image_url=None, progress_callback=N
         error_details = traceback.format_exc()
         print(f"生成试穿效果时发生错误: {error_details}")
         return None, {"error": f"Error in model tryon: {str(e)}\n{error_details}"}
-
-# ===== 模特试穿功能结束 =====
-
-def crop_upper_body(image, crop_ratio=0.6):
-    """
-    裁剪图像只显示上半部分
-    
-    Args:
-        image: PIL图像对象
-        crop_ratio: 保留图像的上半部分比例，默认0.6（保留上60%）
-    
-    Returns:
-        裁剪后的PIL图像对象
-    """
-    if image is None:
-        print("错误：传入的图像为None")
-        return None
-    
-    try:
-        width, height = image.size
-        
-        # 确保裁剪比例在合理范围内
-        crop_ratio = max(0.1, min(1.0, crop_ratio))
-        
-        # 计算裁剪后的高度
-        crop_height = int(height * crop_ratio)
-        
-        # 确保裁剪高度至少为1像素
-        crop_height = max(1, crop_height)
-        
-        # 裁剪图像，从顶部开始，保留上半部分
-        cropped_image = image.crop((0, 0, width, crop_height))
-        
-        print(f"图像裁剪完成：原尺寸 {width}x{height} -> 裁剪后 {width}x{crop_height} (比例: {crop_ratio:.1f})")
-        
-        return cropped_image
-        
-    except Exception as e:
-        print(f"图像裁剪失败: {e}")
-        import traceback
-        print(f"详细错误信息: {traceback.format_exc()}")
-        return image  # 如果裁剪失败，返回原图
 
 # ===== 模特试穿功能结束 =====
 
@@ -1391,16 +1341,11 @@ def show_high_recommendation_without_explanation():
         st.markdown("#### Model Try-on")
         st.markdown("""
         <div style="margin-bottom: 15px; padding: 10px; background-color: #e8f4fd; border-radius: 5px; border-left: 4px solid #0066cc;">
-        <p style="margin: 0; font-size: 14px;">🎭 Use AI try-on technology to make your T-shirt design look like it's worn by a real model!<br/>
+        <p style="margin: 0; font-size: 14px;">🎭 Use AI try-on technology to make your t-shirt design look like it's on a real person!<br/>
         ✨ Your actual design image will be uploaded to the cloud for try-on<br/>
-        📐 For better display of the upper garment effect, the try-on image will be automatically cropped to show only the upper body<br/>
         ⏱️ The generation process takes 15-30 seconds, please wait patiently.</p>
         </div>
         """, unsafe_allow_html=True)
-        
-        # 固定裁剪比例为0.6
-        if 'crop_ratio' not in st.session_state:
-            st.session_state.crop_ratio = 0.6
         
         # 检查是否有可用的设计
         can_generate_tryon = (st.session_state.final_design is not None or 
