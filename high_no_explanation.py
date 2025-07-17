@@ -2,8 +2,8 @@ import streamlit as st
 from PIL import Image, ImageDraw
 import requests
 from io import BytesIO
-import os  # Ensure os module is imported here
-# Remove cairosvg dependency, use svglib as the only SVG processing library
+import os  # 确保os模块在这里导入
+# 移除cairosvg依赖，使用svglib作为唯一的SVG处理库
 try:
     from svglib.svglib import svg2rlg
     from reportlab.graphics import renderPM
@@ -15,15 +15,15 @@ from openai import OpenAI
 from streamlit_image_coordinates import streamlit_image_coordinates
 import re
 import math
-# Import fabric texture module
+# 导入面料纹理模块
 from fabric_texture import apply_fabric_texture
 import uuid
 import json
-# Import parallel processing libraries
+# 导入并行处理库
 import concurrent.futures
 import time
 import threading
-# Import Alibaba Cloud DashScope text-to-image API
+# 导入阿里云DashScope文生图API
 from http import HTTPStatus
 from urllib.parse import urlparse, unquote
 from pathlib import PurePosixPath
@@ -34,7 +34,7 @@ except ImportError:
     DASHSCOPE_AVAILABLE = False
     st.warning("DashScope not installed, will use OpenAI DALL-E as fallback")
 
-# API configuration - multiple API keys for enhanced concurrency
+# API配置信息 - 多个API密钥用于增强并发能力
 API_KEYS = [
     "sk-lNVAREVHjj386FDCd9McOL7k66DZCUkTp6IbV0u9970qqdlg",
     "sk-y8x6LH0zdtyQncT0aYdUW7eJZ7v7cuKTp90L7TiK3rPu3fAg", 
@@ -44,7 +44,7 @@ API_KEYS = [
 ]
 BASE_URL = "https://api.deepbricks.ai/v1/"
 
-# GPT-4o-mini API configuration - also using multiple keys
+# GPT-4o-mini API配置 - 同样使用多个密钥
 GPT4O_MINI_API_KEYS = [
     "sk-lNVAREVHjj386FDCd9McOL7k66DZCUkTp6IbV0u9970qqdlg",
     "sk-y8x6LH0zdtyQncT0aYdUW7eJZ7v7cuKTp90L7TiK3rPu3fAg",
@@ -54,10 +54,10 @@ GPT4O_MINI_API_KEYS = [
 ]
 GPT4O_MINI_BASE_URL = "https://api.deepbricks.ai/v1/"
 
-# Alibaba Cloud DashScope API configuration
+# 阿里云DashScope API配置
 DASHSCOPE_API_KEY = "sk-4f82c6e2097440f8adb2ef688c7c7551"
 
-# API key polling counters
+# API密钥轮询计数器
 _api_key_counter = 0
 _gpt4o_api_key_counter = 0
 _api_lock = threading.Lock()
@@ -282,23 +282,23 @@ def generate_vector_image(prompt, background_color=None):
                         print(f"背景透明化处理完成")
                         return img_processed
                     else:
-                        st.error(f"Failed to download image, status code: {image_resp.status_code}")
+                        st.error(f"下载图像失败, 状态码: {image_resp.status_code}")
             else:
                 print('DashScope调用失败, status_code: %s, code: %s, message: %s' %
                       (rsp.status_code, rsp.code, rsp.message))
-                st.error(f"DashScope API call failed: {rsp.message}")
+                st.error(f"DashScope API调用失败: {rsp.message}")
                 
         except Exception as e:
-            st.error(f"DashScope API call error: {e}")
+            st.error(f"DashScope API调用错误: {e}")
             print(f"DashScope错误: {e}")
     
     # 如果DashScope不可用，直接返回None
     if not DASHSCOPE_AVAILABLE:
-        st.error("DashScope API is not available, unable to generate logo. Please ensure dashscope library is properly installed.")
+        st.error("DashScope API不可用，无法生成logo。请确保已正确安装dashscope库。")
         return None
     
     # DashScope失败时也直接返回None，不使用备选方案
-    st.error("DashScope API call failed, unable to generate logo. Please check network connection or API key.")
+    st.error("DashScope API调用失败，无法生成logo。请检查网络连接或API密钥。")
     return None
 
 def change_shirt_color(image, color_hex, apply_texture=False, fabric_type=None):
@@ -995,7 +995,7 @@ def upload_image_to_get_public_url(image_path):
     
     # 所有上传服务都失败时的处理
     print("⚠️ 所有图片上传服务都失败")
-    st.warning("Image upload failed, will use example image for demonstration. Please check network connection and try again.")
+    st.warning("图片上传失败，将使用示例图片进行演示。请检查网络连接后重试。")
     
     # 返回示例图片URL作为备选方案
     return "https://help-static-aliyun-doc.aliyuncs.com/file-manage-files/zh-CN/20250626/epousa/short_sleeve.jpeg"
@@ -1182,12 +1182,12 @@ def generate_model_tryon(tshirt_image, model_image_url=None, progress_callback=N
             # 使用阿里云文档中提供的示例模特图
             model_image_url = "https://help-static-aliyun-doc.aliyuncs.com/file-manage-files/zh-CN/20250626/ubznva/model_person.png"
         
-        update_progress(10, "Starting model try-on generation...")
-        print(f"开始生成模特试穿效果，使用模特图片: {model_image_url}")
+        update_progress(10, "Start generating model try-on effect...")
+        print(f"Start generating model try-on effect, using model image: {model_image_url}")
         
         # 验证输入图片
         if tshirt_image is None:
-            return None, {"error": "T-shirt design image is empty"}
+            return None, {"error": "T恤设计图片为空"}
         
         # 1. 保存T恤图片到临时文件
         update_progress(15, "Saving T-shirt design image...")
@@ -1298,7 +1298,7 @@ def generate_model_tryon(tshirt_image, model_image_url=None, progress_callback=N
         # 创建轮询进度回调
         def poll_progress_callback(attempt, max_attempts, status):
             progress = 50 + int(40 * attempt / max_attempts)  # 50-90%的进度用于轮询
-            update_progress(progress, f"Generating... (Status: {status})")
+            update_progress(progress, f"生成中...（状态: {status}）")
         
         result = poll_tryon_task(task_id, progress_callback=poll_progress_callback)
         
@@ -1313,7 +1313,7 @@ def generate_model_tryon(tshirt_image, model_image_url=None, progress_callback=N
             print(f"结果中没有图片URL: {result}")
             return None, {"error": "No image URL in result"}
         
-        print(f"开始下载试穿效果图: {image_url}")
+        print(f"Start downloading try-on result image: {image_url}")
         
         # 多次尝试下载图片
         try_on_image = None
@@ -1326,7 +1326,7 @@ def generate_model_tryon(tshirt_image, model_image_url=None, progress_callback=N
                 
                 if img_response.status_code == 200:
                     try_on_image = Image.open(BytesIO(img_response.content)).convert("RGBA")
-                    print(f"试穿效果图下载成功，尺寸: {try_on_image.size}")
+                    print(f"Try-on result image downloaded successfully, size: {try_on_image.size}")
                     break
                 else:
                     print(f"第 {attempt + 1} 次下载失败，状态码: {img_response.status_code}")
@@ -1337,7 +1337,7 @@ def generate_model_tryon(tshirt_image, model_image_url=None, progress_callback=N
         if try_on_image is None:
             return None, {"error": "Failed to download result image after multiple attempts"}
         
-        update_progress(100, "✅ Try-on effect generation completed!")
+        update_progress(100, "✅ 试穿效果生成完成！")
         
         # 清理临时文件
         try:
@@ -1351,14 +1351,14 @@ def generate_model_tryon(tshirt_image, model_image_url=None, progress_callback=N
             "success": True,
             "task_id": task_id,
             "image_url": image_url,
-            "message": "Try-on effect generated successfully"
+            "message": "Try-on effect generation completed successfully"
         }
             
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
         print(f"生成试穿效果时发生错误: {error_details}")
-        update_progress(0, f"❌ Generation failed: {str(e)}")
+        update_progress(0, f"❌ 生成失败: {str(e)}")
         return None, {"error": f"Error in model tryon: {str(e)}\n{error_details}"}
 
 # ===== 模特试穿功能结束 =====
@@ -1485,7 +1485,7 @@ def show_high_recommendation_without_explanation():
                     st.info("Could not load original T-shirt image, please refresh the page")
     
     with tryon_col:
-        # Model try-on effect display area
+        # 模特试穿效果展示区
         st.markdown("### Model Try-on Effect")
         
         if st.session_state.tryon_result is not None:
@@ -1494,10 +1494,10 @@ def show_high_recommendation_without_explanation():
                 st.success(st.session_state.tryon_info["message"])
         elif st.session_state.is_generating_tryon:
             st.info("🤖 AI is generating the try-on effect, please wait...")
-            st.image("https://via.placeholder.com/400x600/f0f0f0/999999?text=Generating...", use_container_width=True)
+            st.image("https://via.placeholder.com/400x600/f0f0f0/999999?text=generating...", use_container_width=True)
         else:
             st.info("👕 Please generate a t-shirt design first, then click 'Generate Model Try-on' to view the wearing effect")
-            st.image("https://via.placeholder.com/400x600/f0f0f0/999999?text=Try-on+Preview", use_container_width=True)
+            st.image("https://via.placeholder.com/400x600/f0f0f0/999999?text=试穿预览", use_container_width=True)
     
     with input_col:
         # 设计提示词和推荐级别选择区
@@ -1541,7 +1541,7 @@ def show_high_recommendation_without_explanation():
         with generate_col:
             generate_button = st.button("🎨 Generate T-shirt Design", key="generate_design", use_container_width=True)
         
-        # Model try-on button
+        # 模特试穿按钮
         st.markdown("---")
         st.markdown("#### Model Try-on")
         st.markdown("""
@@ -1557,7 +1557,7 @@ def show_high_recommendation_without_explanation():
                              len(st.session_state.generated_designs) > 0)
         
         if can_generate_tryon:
-            # If there are multiple designs, let user choose which design to try on
+            # 如果有多个设计，让用户选择要试穿的设计
             if len(st.session_state.generated_designs) > 1:
                 selected_design_index = st.selectbox(
                     "Choose design for try-on:", 
@@ -1576,13 +1576,13 @@ def show_high_recommendation_without_explanation():
             st.info("Please generate a t-shirt design first, then click 'Generate Model Try-on' to view the wearing effect")
             tryon_button = False
         
-        # Create progress and message areas below input box
+        # 创建进度和消息区域在输入框下方
         progress_area = st.empty()
         message_area = st.empty()
         tryon_progress_area = st.empty()
         tryon_message_area = st.empty()
         
-        # Generate design button event handling
+        # 生成设计按钮事件处理
         if generate_button:
             # 保存用户输入的关键词
             st.session_state.keywords = keywords
