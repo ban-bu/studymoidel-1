@@ -17,3 +17,5 @@ freetype-py
 cairosvg
 # 添加阿里云DashScope文生图API
 dashscope
+# 添加阿里云OSS支持（可选）
+oss2
